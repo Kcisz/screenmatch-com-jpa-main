@@ -1,12 +1,5 @@
 package br.com.alura.screenmatch.principal;
 
-import java.util.ArrayList;
-import java.util.Comparator;
-import java.util.List;
-import java.util.Optional;
-import java.util.Scanner;
-import java.util.stream.Collectors;
-
 import br.com.alura.screenmatch.model.DadosSerie;
 import br.com.alura.screenmatch.model.DadosTemporada;
 import br.com.alura.screenmatch.model.Episodio;
@@ -14,31 +7,39 @@ import br.com.alura.screenmatch.model.Serie;
 import br.com.alura.screenmatch.repository.SerieRepository;
 import br.com.alura.screenmatch.service.ConsumoApi;
 import br.com.alura.screenmatch.service.ConverteDados;
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.List;
+import java.util.Optional;
+import java.util.Scanner;
+import java.util.stream.Collectors;
 
 /**
- * Classe principal que gerencia o menu de interação com o usuário para buscar e
- * listar séries.
+ * Classe principal que gerencia o menu de interação com o usuário para buscar,
+ * listar e salvar séries e episódios.
  */
 public class Principal {
 
-	// Atributos para interação com o usuário e consumo da API
+	/** Scanner para capturar a entrada do usuário. */
 	private Scanner leitura = new Scanner(System.in);
+	/** Serviço para consumir APIs REST. */
 	private ConsumoApi consumo = new ConsumoApi();
+	/** Serviço para converter dados JSON em objetos Java. */
 	private ConverteDados conversor = new ConverteDados();
+	/** URL base da API OMDB. */
 	private final String ENDERECO = "https://www.omdbapi.com/?t=";
+	/** Chave da API para autenticação. */
 	private final String API_KEY = "&apikey=6585022c";
 
-	// Lista temporária para armazenar os dados de séries
-	private List<DadosSerie> dadosSeries = new ArrayList<>();
-
-	// Repositório para salvar as séries no banco de dados
+	/** Repositório para salvar e buscar séries no banco de dados. */
 	private SerieRepository serieRepository;
 
+	/** Lista de séries buscadas no banco de dados. */
 	private List<Serie> series = new ArrayList<Serie>();
 
 	/**
 	 * Construtor da classe Principal que recebe e injeta o repositório de séries.
-	 * 
+	 *
 	 * @param serieRepository O repositório de séries a ser utilizado.
 	 */
 	public Principal(SerieRepository serieRepository) {
@@ -66,26 +67,26 @@ public class Principal {
 			leitura.nextLine();
 
 			switch (opcao) {
-			case 1:
-				buscarSerieWeb();
-				break;
-			case 2:
-				buscarEpisodioPorSerie();
-				break;
-			case 3:
-				listarSeriesBuscadas();
-				break;
-			case 0:
-				System.out.println("Saindo...");
-				break;
-			default:
-				System.out.println("Opção inválida");
+				case 1:
+					buscarSerieWeb();
+					break;
+				case 2:
+					buscarEpisodioPorSerie();
+					break;
+				case 3:
+					listarSeriesBuscadas();
+					break;
+				case 0:
+					System.out.println("Saindo...");
+					break;
+				default:
+					System.out.println("Opção inválida");
 			}
 		}
 	}
 
 	/**
-	 * Busca uma série na web, cria um objeto Serie e salva no banco de dados.
+	 * Busca uma série na web, cria um objeto Serie e o salva no banco de dados.
 	 */
 	private void buscarSerieWeb() {
 		DadosSerie dados = getDadosSerie();
@@ -99,7 +100,7 @@ public class Principal {
 	/**
 	 * Solicita o nome de uma série ao usuário, consome a API e retorna os dados da
 	 * série.
-	 * 
+	 *
 	 * @return Objeto DadosSerie com as informações da série.
 	 */
 	private DadosSerie getDadosSerie() {
@@ -123,64 +124,46 @@ public class Principal {
 		System.out.println("Escolha uma série pelo nome");
 		var nomeSerie = leitura.nextLine();
 
-		Optional<Serie> serie = series.stream().filter(s-> s.getTitulo().toLowerCase().contains(nomeSerie.toLowerCase())).findFirst();
-		
-		if (serie.isPresent()) {
-			
-			var serieEncontrada = serie.get();
-			
-		List<DadosTemporada> temporadas = new ArrayList<>();
+		// Busca a série no banco de dados.
+		Optional<Serie> serie = series.stream().filter(s -> s.getTitulo().toLowerCase().contains(nomeSerie.toLowerCase())).findFirst();
 
-		// Itera sobre o número de temporadas para buscar os dados de cada uma
-		for (int i = 1; i <= serieEncontrada.getTotalTemporadas(); i++) {
-			var json = consumo.obterDados(ENDERECO + serieEncontrada.getTitulo().replace(" ", "+") + "&season=" + i + API_KEY);
-			DadosTemporada dadosTemporada = conversor.obterDados(json, DadosTemporada.class);
-			temporadas.add(dadosTemporada);
+		if (serie.isPresent()) {
+
+			var serieEncontrada = serie.get();
+
+			List<DadosTemporada> temporadas = new ArrayList<>();
+
+			// Itera sobre o número de temporadas para buscar os dados de cada uma
+			for (int i = 1; i <= serieEncontrada.getTotalTemporadas(); i++) {
+				var json = consumo.obterDados(ENDERECO + serieEncontrada.getTitulo().replace(" ", "+") + "&season=" + i + API_KEY);
+				DadosTemporada dadosTemporada = conversor.obterDados(json, DadosTemporada.class);
+				temporadas.add(dadosTemporada);
+			}
+
+			// Imprime as temporadas encontradas
+			temporadas.forEach(System.out::println);
+
+			// Combina todos os episódios de todas as temporadas em uma única lista e mapeia-os para a classe Episodio.
+			List<Episodio> episodios = temporadas.stream()
+					.flatMap(d -> d.episodios().stream().map( e -> new Episodio(d.numero(), e)))
+					.collect(Collectors.toList());
+
+			serieEncontrada.setEpisodios(episodios);
+
+			serieRepository.save(serieEncontrada);
+
+		} else {
+			System.out.println("Série não encontrada!");
 		}
-		// Imprime as temporadas encontradas
-		temporadas.forEach(System.out::println);
-		
-		
-		List<Episodio> episodios =temporadas.stream()
-		.flatMap(d -> d.episodios().stream().map( e -> new Episodio(d.numero(), e)))
-		.collect(Collectors.toList());
-		
-		serieEncontrada.setEpisodios(episodios);
-		
-		serieRepository.save(serieEncontrada);
-		
-		
-	}else {
-		System.out.println("Série não encontrada!");
-	}
-		
 	}
 
 	/**
-	 * Lista todas as séries que foram buscadas, ordenando-as por gênero.
+	 * Busca todas as séries salvas no banco de dados e as lista no console,
+	 * ordenadas por gênero.
 	 */
 	private void listarSeriesBuscadas() {
-		/*
-		 * Esta linha está comentada pois agora a busca é feita diretamente no banco de
-		 * dados. A lista temporária `dadosSeries` não é mais a fonte de dados
-		 * principal. List<Serie> listaDeSeries =
-		 * dadosSeries.stream().map(Serie::new).collect(Collectors.toList());
-		 * 
-		 * 1. Busca todas as séries salvas no banco de dados. List<Serie> listaDeSeries
-		 * = new ArrayList<>(); listaDeSeries = serieRepository.findAll();
-		 * 
-		 * 2. Ordena a lista de séries por gênero usando um Comparator.
-		 * listaDeSeries.sort(Comparator.comparing(Serie::getGenero));
-		 * 
-		 * 3. Imprime cada série da lista já ordenada no console.
-		 * listaDeSeries.forEach(System.out::println);
-		 * 
-		 * 
-		 */
-
-		// Busca todas as séries salvas no banco de dados, ordena por gênero e imprime
-		// no console.
 		series = serieRepository.findAll();
+		// Ordena a lista de séries por gênero e imprime cada uma no console.
 		series.stream().sorted(Comparator.comparing(Serie::getGenero)).forEach(System.out::println);
 
 	}
